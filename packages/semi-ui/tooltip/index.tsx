@@ -3,7 +3,7 @@ import React, { isValidElement, cloneElement } from 'react';
 import ReactDOM from 'react-dom';
 import classNames from 'classnames';
 import PropTypes from 'prop-types';
-import { throttle, noop, get, omit, each, isEmpty } from 'lodash';
+import { throttle, noop, get, omit, each, isEmpty, isFunction } from 'lodash';
 
 import { BASE_CLASS_PREFIX } from '@douyinfe/semi-foundation/base/constants';
 import warning from '@douyinfe/semi-foundation/utils/warning';
@@ -17,7 +17,7 @@ import '@douyinfe/semi-foundation/tooltip/tooltip.scss';
 
 import BaseComponent, { BaseProps } from '../_base/baseComponent';
 import { isHTMLElement } from '../_base/reactUtils';
-import { stopPropagation } from '../_utils';
+import { getActiveElement, getFocusableElements, stopPropagation } from '../_utils';
 import Portal from '../_portal/index';
 import ConfigContext from '../configProvider/context';
 import TriangleArrow from './TriangleArrow';
@@ -49,7 +49,7 @@ export interface TooltipProps extends BaseProps {
     clickToHide?: boolean;
     visible?: boolean;
     style?: React.CSSProperties;
-    content?: React.ReactNode;
+    content?: React.ReactNode | RenderContent;
     prefixCls?: string;
     onVisibleChange?: (visible: boolean) => void;
     onClickOutSide?: (e: React.MouseEvent) => void;
@@ -65,6 +65,7 @@ export interface TooltipProps extends BaseProps {
     stopPropagation?: boolean;
     clickTriggerToHide?: boolean;
     wrapperClassName?: string;
+    guardFocus?: boolean;
 }
 interface TooltipState {
     visible: boolean;
@@ -108,7 +109,7 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
         clickTriggerToHide: PropTypes.bool,
         visible: PropTypes.bool,
         style: PropTypes.object,
-        content: PropTypes.node,
+        content: PropTypes.oneOfType([PropTypes.node, PropTypes.func]),
         prefixCls: PropTypes.string,
         onVisibleChange: PropTypes.func,
         onClickOutSide: PropTypes.func,
@@ -123,6 +124,7 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
         // private
         role: PropTypes.string,
         wrapWhenSpecial: PropTypes.bool, // when trigger has special status such as "disabled" or "loading", wrap span
+        guardFocus: PropTypes.bool,
     };
 
     static defaultProps = {
@@ -143,11 +145,13 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
         showArrow: true,
         wrapWhenSpecial: true,
         zIndex: numbers.DEFAULT_Z_INDEX,
+        guardFocus: false,
     };
 
     eventManager: Event;
     triggerEl: React.RefObject<unknown>;
-    containerEl: React.RefObject<unknown>;
+    containerEl: React.RefObject<HTMLDivElement>;
+    setInitialFocusRef: React.RefObject<HTMLElement>;
     clickOutsideHandler: any;
     resizeHandler: any;
     isWrapped: boolean;
@@ -155,6 +159,7 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
     scrollHandler: any;
     getPopupContainer: () => HTMLElement;
     containerPosition: string;
+    foundation: TooltipFoundation;
 
     constructor(props: TooltipProps) {
         super(props);
@@ -180,13 +185,21 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
         this.eventManager = new Event();
         this.triggerEl = React.createRef();
         this.containerEl = React.createRef();
+        this.setInitialFocusRef = React.createRef();
         this.clickOutsideHandler = null;
         this.resizeHandler = null;
         this.isWrapped = false; // Identifies whether a span element is wrapped
         this.containerPosition = undefined;
     }
 
-    setContainerEl = (node: HTMLDivElement) => (this.containerEl = { current: node });
+    setContainerEl = (node: HTMLDivElement) => {
+        this.containerEl = { current: node };
+        const { guardFocus } = this.props;
+
+        if (guardFocus && node) {
+            this.foundation.registerContainerKeydown(node);
+        }
+    };
 
     get adapter(): TooltipAdapter<TooltipProps, TooltipState> {
         return {
@@ -197,7 +210,7 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
             off: (...args: any[]) => this.eventManager.off(...args),
-            insertPortal: (content: string, { position, ...containerStyle }: { position: Position }) => {
+            insertPortal: (content: TooltipProps['content'], { position, ...containerStyle }: { position: Position }) => {
                 this.setState(
                     {
                         isInsert: true,
@@ -317,7 +330,7 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
                     let el = this.triggerEl && this.triggerEl.current;
                     let popupEl = this.containerEl && this.containerEl.current;
                     el = ReactDOM.findDOMNode(el as React.ReactInstance);
-                    popupEl = ReactDOM.findDOMNode(popupEl as React.ReactInstance);
+                    popupEl = ReactDOM.findDOMNode(popupEl as React.ReactInstance) as HTMLDivElement;
                     if (
                         (el && !(el as any).contains(e.target) && popupEl && !(popupEl as any).contains(e.target)) ||
                         this.props.clickTriggerToHide
@@ -392,6 +405,34 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
                 }
             },
             getContainerPosition: () => this.containerPosition,
+            registerContainerKeydown: (node: HTMLDivElement) => {
+                if (this.foundation.handleContainerKeydown) {
+                    this.adapter.unregisterContainerKeydown();
+                }
+                node && node.addEventListener('keydown', this.foundation.handleContainerKeydown);
+            },
+            unregisterContainerKeydown: () => {
+                const node = this.adapter.getContainer() as HTMLDivElement;
+                if (this.foundation.handleContainerKeydown) {
+                    node && node.removeEventListener('keydown', this.foundation.handleContainerKeydown);
+                }
+            },
+            getContainer: () => this.containerEl && this.containerEl.current,
+            getFocusableElements: (node: HTMLDivElement) => {
+                return getFocusableElements(node);
+            },
+            getActiveElement: () => {
+                return getActiveElement();
+            },
+            setInitialFocus: () => {
+                const focusRefNode = get(this, 'setInitialFocusRef.current');
+                const defaultFocusNode = this.adapter.getContainer();
+                if (focusRefNode && 'focus' in focusRefNode) {
+                    focusRefNode.focus();
+                } else if (defaultFocusNode && 'focus' in defaultFocusNode) {
+                    defaultFocusNode.focus();
+                }
+            }
         };
     }
 
@@ -491,9 +532,17 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
         }
     };
 
+    renderContentNode = (content: TooltipProps['content']) => {
+        const contentProps = {
+            setInitialFocusRef: this.setInitialFocusRef
+        };
+        return !isFunction(content) ? content : content(contentProps);
+    };
+
     renderPortal = () => {
         const { containerStyle = {}, visible, portalEventSet, placement, transitionState, id, isPositionUpdated } = this.state;
         const { prefixCls, content, showArrow, style, motion, role, zIndex } = this.props;
+        const contentNode = this.renderContentNode(content);
         const { className: propClassName } = this.props;
         const direction = this.context.direction;
         const className = classNames(propClassName, {
@@ -524,7 +573,7 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
                                 x-placement={placement}
                                 id={id}
                             >
-                                {content}
+                                {contentNode}
                                 {icon}
                             </div>
                         ) :
@@ -533,7 +582,7 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
             </TooltipTransition>
         ) : (
             <div className={className} {...portalEventSet} x-placement={placement} style={{ visibility: motion ? undefined : 'visible', ...style }}>
-                {content}
+                {contentNode}
                 {icon}
             </div>
         );
@@ -546,6 +595,8 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
                     style={portalInnerStyle}
                     ref={this.setContainerEl}
                     onClick={this.handlePortalInnerClick}
+                    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+                    tabIndex={0}
                 >
                     {inner}
                 </div>
@@ -662,3 +713,9 @@ export default class Tooltip extends BaseComponent<TooltipProps, TooltipState> {
 }
 
 export { Position };
+
+export interface RenderContentProps {
+    setInitialFocusRef?: React.RefObject<HTMLElement>;
+}
+
+export type RenderContent = (props: RenderContentProps) => React.ReactNode;

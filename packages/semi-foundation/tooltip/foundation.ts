@@ -61,6 +61,12 @@ export interface TooltipAdapter<P = Record<string, any>, S = Record<string, any>
     updateContainerPosition(): void;
     updatePlacementAttr(placement: Position): void;
     getContainerPosition(): string;
+    registerContainerKeydown(node: any): void;
+    unregisterContainerKeydown(): void;
+    getFocusableElements(node: any): any[];
+    getActiveElement(): any;
+    getContainer(): any;
+    setInitialFocus(): void;
 }
 
 export type Position = ArrayElement<typeof strings.POSITION_SET>;
@@ -104,6 +110,7 @@ export default class Tooltip<P = Record<string, any>, S = Record<string, any>> e
         this._unBindPortalEvent();
         this._unBindResizeEvent();
         this._unBindScrollEvent();
+        this._unBindContainerKeydown();
     }
 
     _bindTriggerEvent(triggerEventSet: Record<string, any>) {
@@ -260,6 +267,7 @@ export default class Tooltip<P = Record<string, any>, S = Record<string, any>> e
         });
 
         this._adapter.on('positionUpdated', () => {
+            this._adapter.setInitialFocus();
             this._togglePortalVisible(true);
         });
 
@@ -796,5 +804,69 @@ export default class Tooltip<P = Record<string, any>, S = Record<string, any>> e
 
     _initContainerPosition() {
         this._adapter.updateContainerPosition();
+    }
+
+    registerContainerKeydown(node: any) {
+        this._adapter.registerContainerKeydown(node);
+    }
+
+    _unBindContainerKeydown() {
+        this._adapter.unregisterContainerKeydown();
+    }
+
+    handleContainerKeydown = (event: any) => {
+        const pressShift = event.shiftKey;
+        const container = this._adapter.getContainer();
+
+        switch (event.key) {
+            case "Escape":
+                this._handleContainerEscapeKeyDown(container);
+                break;
+            case "Tab":
+                const focusableElements = this._adapter.getFocusableElements(container);
+                const focusableNum = focusableElements.length;
+
+                if (focusableNum) {
+                    if (pressShift) {
+                        this._handleContainerShiftTabKeyDown(focusableElements, event);
+                    } else {
+                        this._handleContainerTabKeyDown(focusableElements, event);
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    _handleContainerEscapeKeyDown(container: any) {
+        if (container && 'blur' in container) {
+            container.blur();
+            this.hide();
+        }
+    }
+
+    _handleContainerTabKeyDown(focusableElements: any[], event: any) {
+        if (focusableElements.length === 0){
+            return;
+        }
+        const activeElement = this._adapter.getActiveElement();
+        const isLastCurrentFocus = focusableElements[focusableElements.length - 1] === activeElement;
+        if (isLastCurrentFocus) {
+            focusableElements[0].focus();
+            event.preventDefault();
+        }
+    }
+
+    _handleContainerShiftTabKeyDown(focusableElements: any[], event: any) {
+        if (focusableElements.length === 0){
+            return;
+        }
+        const activeElement = this._adapter.getActiveElement();
+        const isFirstCurrentFocus = focusableElements[0] === activeElement;
+        if (isFirstCurrentFocus) {
+            focusableElements[focusableElements.length - 1].focus();
+            event.preventDefault();
+        }
     }
 }

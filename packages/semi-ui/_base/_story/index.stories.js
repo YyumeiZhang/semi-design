@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Button, Typography, Card, Tooltip, Tag, Avatar, Rating, Nav, Layout } from '../../index';
+import { Button, Typography, Card, Tooltip, Tag, Avatar, Rating, Nav, Layout, Space, Popover, Input } from '../../index';
 import { IconHelpCircle, IconUser, IconStar, IconSetting } from '@douyinfe/semi-icons';
 import SemiA11y from './a11y';
 import './index.scss';
@@ -118,3 +118,35 @@ const TestAlwaysDarkLight = () => {
 
   return <Demo />;
 };
+
+export const A11yKeyboard = () => {
+  const renderContent = ({ setInitialFocusRef }) => {
+    return (
+      <div style={{ height: 200, width: 200 }}>
+        <button>button</button>
+        <a href="https://semi.design">link2</a>
+        {/* <input ref={setInitialFocusRef} placeholder="init focus" /> */}
+        <input placeholder="" />
+        <a href="https://semi.design">link</a>
+        <button>button2</button>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ paddingLeft: 100, paddingTop: 100 }}>
+      <Space>
+        <Popover content={renderContent} trigger="click">
+          <Button>click</Button>
+        </Popover>
+        <Popover content={renderContent} trigger="hover">
+          <span>hover</span>
+        </Popover>
+        <Popover content={renderContent} trigger="focus">
+          <Input value="focus" />
+        </Popover>
+      </Space>
+    </div>
+  );
+};
+A11yKeyboard.storyName = "a11y keyboard and focus";

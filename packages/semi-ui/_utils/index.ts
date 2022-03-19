@@ -164,3 +164,27 @@ export const isSemiIcon = (icon: any): boolean => React.isValidElement(icon) && 
 export function getActiveElement() {
     return document ? document.activeElement as HTMLElement : null;
 }
+
+export function isNodeContainsFocus(node: HTMLElement) {
+    const activeElement = getActiveElement();
+    return activeElement === node || node.contains(activeElement);
+}
+
+export function getFocusableElements(node: HTMLElement) {
+    const focusableSelectorsList = [
+        "a[href]:not([tabindex='-1'])",
+        "area[href]:not([tabindex='-1'])",
+        "input:not([disabled]):not([tabindex='-1'])",
+        "select:not([disabled]):not([tabindex='-1'])",
+        "textarea:not([disabled]):not([tabindex='-1'])",
+        "button:not([disabled]):not([tabindex='-1'])",
+        "iframe:not([tabindex='-1'])",
+        "object:not([tabindex='-1'])",
+        "*[tabindex]:not([tabindex='-1'])",
+        "*[contenteditable]:not([tabindex='-1'])",
+    ];
+    const focusableSelectorsStr = focusableSelectorsList.join(',');
+    // 未过滤不可见的 elements
+    const focusableElements = Array.from(node.querySelectorAll<HTMLElement>(focusableSelectorsStr));
+    return focusableElements;
+}
