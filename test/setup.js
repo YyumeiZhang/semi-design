@@ -13,6 +13,7 @@ import { mockRandom } from 'jest-mock-random';
 // test
 // test 2
 // test 3
+// test 4
 import { IntersectionObserver } from '@shopify/jest-dom-mocks';
 // window.requestAnimationFrame = function (callback) {
 //     setTimeout(callback, 0);
